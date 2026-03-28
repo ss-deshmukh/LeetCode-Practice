@@ -15,6 +15,6 @@ jobs:
       - name: Sync LeetCode submissions
         uses: joshcai/leetcode-sync@v1.4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.MY_GITHUB_TOKEN }}
           leetcode-session: ${{ secrets.LEETCODE_SESSION }}
           leetcode-csrf-token: ${{ secrets.LEETCODE_CSRF_TOKEN }}
