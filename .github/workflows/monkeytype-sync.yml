@@ -19,29 +19,30 @@ jobs:
         env:
           MONKEYTYPE_API_KEY: ${{ secrets.MONKEYTYPE_API_KEY }}
         run: |
-          python3 << 'EOF'
-          import os
-          import json
-          import urllib.request
-          import urllib.error
-          from datetime import datetime, timezone, timedelta
+          # Use curl to avoid Cloudflare bot detection that blocks Python urllib
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: ApeKey ${MONKEYTYPE_API_KEY}" \
+            -H "Accept: application/json" \
+            "https://api.monkeytype.com/results?limit=50")
 
-          api_key = os.environ["MONKEYTYPE_API_KEY"]
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API error ${HTTP_CODE}: ${BODY}"
+            exit 1
+          fi
+
+          echo "$BODY" > /tmp/mt_results.json
+
+          python3 << 'EOF'
+          import json
+          from datetime import datetime, timezone
+
           today_utc = datetime.now(timezone.utc).date()
 
-          # Fetch last 50 results (enough to find today's 50-word tests)
-          url = "https://api.monkeytype.com/results?limit=50"
-          req = urllib.request.Request(
-              url,
-              headers={"Authorization": f"ApeKey {api_key}"}
-          )
-
-          try:
-              with urllib.request.urlopen(req) as resp:
-                  data = json.loads(resp.read())
-          except urllib.error.HTTPError as e:
-              print(f"API error {e.code}: {e.read().decode()}")
-              raise
+          with open("/tmp/mt_results.json") as f:
+              data = json.load(f)
 
           results = data.get("data", [])
 
@@ -71,7 +72,6 @@ jobs:
           language    = best.get("language", "english")
           is_pb       = best.get("isPb", False)
           char_stats  = best.get("charStats", [])
-          result_id   = best.get("_id", "")
           ts_ms       = best.get("timestamp", 0)
           result_time = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%H:%M UTC")
 
@@ -99,12 +99,12 @@ jobs:
 
           ## Character Breakdown
 
-          | Type      | Count     |
-          |-----------|-----------|
-          | Correct   | {correct} |
+          | Type      | Count       |
+          |-----------|-------------|
+          | Correct   | {correct}   |
           | Incorrect | {incorrect} |
-          | Extra     | {extra}   |
-          | Missed    | {missed}  |
+          | Extra     | {extra}     |
+          | Missed    | {missed}    |
 
           ---
           *{len(today_results)} attempt(s) today — best result shown*
@@ -114,6 +114,7 @@ jobs:
           md = "\n".join(line.lstrip("          ") for line in md.splitlines()) + "\n"
 
           # Write file: monkeytype/YYYY/MM/YYYY-MM-DD.md
+          import os
           year  = today_utc.strftime("%Y")
           month = today_utc.strftime("%m")
           out_dir = f"monkeytype/{year}/{month}"
